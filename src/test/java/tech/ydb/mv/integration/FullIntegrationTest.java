@@ -127,6 +127,11 @@ public class FullIntegrationTest extends AbstractIntegrationBase {
     protected MvConfig getNewConfig() {
         var ret = super.getNewConfig();
         ret.getProperties().setProperty(MvConfig.CONF_COORD_TIMEOUT, "5");
+        ret.getProperties().setProperty(MvBatchSettings.CONF_TABLE_JOBS, "mv_jobs");
+        ret.getProperties().setProperty(MvBatchSettings.CONF_TABLE_SCANS, "mv_job_scans");
+        ret.getProperties().setProperty(MvBatchSettings.CONF_TABLE_RUNNERS, "mv_runners");
+        ret.getProperties().setProperty(MvBatchSettings.CONF_TABLE_RUNNER_JOBS, "mv_runner_jobs");
+        ret.getProperties().setProperty(MvBatchSettings.CONF_TABLE_COMMANDS, "mv_commands");
         return ret;
     }
 
@@ -183,7 +188,7 @@ public class FullIntegrationTest extends AbstractIntegrationBase {
     private void handler(MvConfig cfg, String name, AtomicInteger successCounter) {
         var batchSettings = new MvBatchSettings(cfg.getProperties());
         try (var conn = new YdbConnector(cfg, true); var api = MvApi.newInstance(conn)) {
-            try (var runner = new MvRunner(conn, api, name)) {
+            try (var runner = new MvRunner(conn, api, batchSettings, name)) {
                 api.applyDefaults(conn.getConfig().getProperties());
                 try (var coord = MvCoordinator.newInstance(conn, batchSettings, name)) {
                     System.err.println("[FFF] Instance starting: " + name);

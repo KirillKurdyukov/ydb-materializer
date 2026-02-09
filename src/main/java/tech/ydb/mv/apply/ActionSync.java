@@ -24,6 +24,7 @@ import tech.ydb.mv.data.MvKey;
 import tech.ydb.mv.data.YdbConv;
 import tech.ydb.mv.metrics.MvMetrics;
 import tech.ydb.mv.model.MvJoinSource;
+import tech.ydb.mv.model.MvKeyInfo;
 import tech.ydb.mv.model.MvViewExpr;
 import tech.ydb.mv.parser.MvSqlGen;
 
@@ -41,6 +42,7 @@ class ActionSync extends ActionBase implements MvApplyAction {
     private final String sqlUpsert;
     private final String sqlDelete;
     private final StructType rowType;
+    private final MvKeyInfo keyInfo;
     private final SessionRetryContext targetCtx;
 
     private final ThreadLocal<StatementTiming> currentStatement = new ThreadLocal<>();
@@ -58,8 +60,10 @@ class ActionSync extends ActionBase implements MvApplyAction {
             this.sqlDelete = sg.makePlainDelete();
             if (target.getTableInfo() != null) {
                 this.rowType = MvSqlGen.toRowType(target.getTableInfo());
+                this.keyInfo = target.getTableInfo().getKeyInfo();
             } else {
                 this.rowType = sg.toRowType();
+                this.keyInfo = target.getTopMostSource().getTableInfo().getKeyInfo();
             }
         }
         if (target.getView().isDefaultDestination()) {
@@ -161,10 +165,24 @@ class ActionSync extends ActionBase implements MvApplyAction {
         int readBatchSize = getReadBatchSize();
         int writeBatchSize = getWriteBatchSize();
         ArrayList<StructValue> output = new ArrayList<>(readBatchSize);
+        ArrayList<MvKey> missing = new ArrayList<>(readBatchSize);
+        HashSet<MvKey> found = new HashSet<>(readBatchSize * 2);
         for (List<MvKey> rd : Lists.partition(rowKeys, readBatchSize)) {
             // read the portion of data
             output.clear();
-            readRows(rd, output);
+            found.clear();
+            readRows(rd, output, found);
+            if (found.size() < rd.size()) {
+                missing.clear();
+                for (MvKey key : rd) {
+                    if (!found.contains(key)) {
+                        missing.add(key);
+                    }
+                }
+                if (!missing.isEmpty()) {
+                    runDelete(missing);
+                }
+            }
             for (List<StructValue> wr : Lists.partition(output, writeBatchSize)) {
                 // write the portion of data
                 runUpsert(wr);
@@ -205,7 +223,7 @@ class ActionSync extends ActionBase implements MvApplyAction {
         lastSqlStatement.set(null);
     }
 
-    private void readRows(List<MvKey> items, ArrayList<StructValue> output) {
+    private void readRows(List<MvKey> items, ArrayList<StructValue> output, HashSet<MvKey> found) {
         // perform the db query
         ResultSetReader result = readRows(items);
         if (result.getRowCount() == 0) {
@@ -215,6 +233,10 @@ class ActionSync extends ActionBase implements MvApplyAction {
         int[] positions = new int[rowType.getMembersCount()];
         for (int ix = 0; ix < positions.length; ++ix) {
             positions[ix] = result.getColumnIndex(rowType.getMemberName(ix));
+        }
+        int[] keyPositions = new int[keyInfo.size()];
+        for (int ix = 0; ix < keyPositions.length; ++ix) {
+            keyPositions[ix] = result.getColumnIndex(keyInfo.getName(ix));
         }
         // convert the output to the desired structures
         while (result.next()) {
@@ -229,6 +251,14 @@ class ActionSync extends ActionBase implements MvApplyAction {
                 }
             }
             output.add(rowType.newValueUnsafe(members));
+            Comparable<?>[] keyValues = new Comparable<?>[keyInfo.size()];
+            for (int ix = 0; ix < keyPositions.length; ++ix) {
+                int pos = keyPositions[ix];
+                if (pos >= 0) {
+                    keyValues[ix] = YdbConv.toPojo(result.getColumn(pos).getValue());
+                }
+            }
+            found.add(new MvKey(keyInfo, keyValues));
         }
     }
 
