@@ -86,7 +86,7 @@ public class FullIntegrationTest extends AbstractIntegrationBase {
                 INDEX ix_command_status GLOBAL SYNC ON (command_status, runner_id),
                 PRIMARY KEY(runner_id, command_no)
             );
-                    """);
+            """);
             System.err.println("[FFF] Exta tables created!");
         }
     }

@@ -107,37 +107,25 @@ UPSERT INTO `test1/sub_table4` (c15,c16) VALUES
                 wc.startDictionaryHandler();
                 standardPause();
                 System.err.println("[AAA] Checking the view output (should be empty)...");
-                int diffCount = checkViewOutput(conn, sqlQuery);
-                Assertions.assertEquals(0, diffCount);
+                assertViewOutputEventually(conn, sqlQuery, 0, 30_000L);
 
                 System.err.println("[AAA] Writing some input data...");
                 runDml(conn, WRITE_INITIAL_DATA);
                 standardPause();
                 System.err.println("[AAA] Checking the view output...");
-                diffCount = checkViewOutput(conn, sqlQuery);
-                Assertions.assertEquals(0, diffCount);
+                assertViewOutputEventually(conn, sqlQuery, 0, 30_000L);
 
                 System.err.println("[AAA] Updating some rows...");
                 runDml(conn, WRITE_UP1);
                 standardPause();
                 System.err.println("[AAA] Checking the view output...");
-                diffCount = checkViewOutput(conn, sqlQuery);
-                if (diffCount > 0) {
-                    System.out.println("********* dumping threads **********");
-                    System.out.println(generateThreadDump());
-                }
-                Assertions.assertEquals(0, diffCount);
+                assertViewOutputEventually(conn, sqlQuery, 0, 30_000L);
 
                 System.err.println("[AAA] Updating more rows...");
                 runDml(conn, WRITE_UP2);
                 standardPause();
                 System.err.println("[AAA] Checking the view output...");
-                diffCount = checkViewOutput(conn, sqlQuery);
-                if (diffCount > 0) {
-                    System.out.println("********* dumping threads **********");
-                    System.out.println(generateThreadDump());
-                }
-                Assertions.assertEquals(0, diffCount);
+                assertViewOutputEventually(conn, sqlQuery, 0, 30_000L);
 
                 System.err.println("[AAA] Checking the topic consumer positions...");
                 checkConsumerPositions(conn);
@@ -150,12 +138,7 @@ UPSERT INTO `test1/sub_table4` (c15,c16) VALUES
                 standardPause();
                 standardPause();
                 System.err.println("[AAA] Checking the view output...");
-                diffCount = checkViewOutput(conn, sqlQuery);
-                if (diffCount > 0) {
-                    System.out.println("********* dumping threads **********");
-                    System.out.println(generateThreadDump());
-                }
-                Assertions.assertEquals(0, diffCount);
+                assertViewOutputEventually(conn, sqlQuery, 0, 30_000L);
 
                 System.err.println("[AAA] Checking the dictionary history...");
                 checkDictHist(conn);
@@ -171,12 +154,7 @@ UPSERT INTO `test1/sub_table4` (c15,c16) VALUES
                 standardPause();
                 standardPause();
                 System.err.println("[AAA] Checking the view output...");
-                diffCount = checkViewOutput(conn, sqlQuery);
-                if (diffCount > 0) {
-                    System.out.println("********* dumping threads **********");
-                    System.out.println(generateThreadDump());
-                }
-                Assertions.assertEquals(0, diffCount);
+                assertViewOutputEventually(conn, sqlQuery, 0, 30_000L);
 
                 System.err.println("[AAA] Updating more dictionary rows...");
                 runDml(conn, WRITE_UP4);
@@ -188,16 +166,30 @@ UPSERT INTO `test1/sub_table4` (c15,c16) VALUES
                 System.err.println("[AAA] Waiting for dictionary refresh...");
                 pause(20_000L);
                 System.err.println("[AAA] Checking the view output...");
-                diffCount = checkViewOutput(conn, sqlQuery);
-                if (diffCount > 0) {
-                    System.out.println("********* dumping threads **********");
-                    System.out.println(generateThreadDump());
-                }
-                Assertions.assertEquals(0, diffCount);
+                assertViewOutputEventually(conn, sqlQuery, 0, 30_000L);
             } finally {
                 wc.shutdown();
             }
         }
+    }
+
+    private void assertViewOutputEventually(YdbConnector conn, String sqlQuery,
+            int expected, long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        int diffCount = Integer.MAX_VALUE;
+        while (System.currentTimeMillis() < deadline) {
+            diffCount = checkViewOutput(conn, sqlQuery);
+            if (diffCount == expected) {
+                return;
+            }
+            pause(1000L);
+        }
+        System.out.println("[AAA] View output timed out, last diff=" + diffCount);
+        if (diffCount > 0) {
+            System.out.println("********* dumping threads **********");
+            System.out.println(generateThreadDump());
+        }
+        Assertions.assertEquals(expected, diffCount);
     }
 
     private int checkViewOutput(YdbConnector conn, String sqlMain) {

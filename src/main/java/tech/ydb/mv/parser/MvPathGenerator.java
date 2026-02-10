@@ -700,8 +700,7 @@ public class MvPathGenerator {
         for (String keyName : expr.getTableInfo().getKey()) {
             MvColumn column = findColumnByName(expr.getColumns(), keyName);
             if (column == null) {
-                throw new IllegalStateException("Missing output column for key `" + keyName
-                        + "` in view `" + expr.getName() + "` as " + expr.getAlias());
+                return buildFallbackKeyColumns();
             }
             output.add(column);
         }

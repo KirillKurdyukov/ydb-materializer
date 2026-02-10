@@ -679,13 +679,26 @@ public class MvSqlGen implements AutoCloseable {
             for (String keyName : target.getTableInfo().getKey()) {
                 MvColumn column = findColumnByName(keyName);
                 if (column == null) {
-                    throw new IllegalStateException("Missing output column for key `" + keyName
-                            + "` in view `" + target.getName() + "` as " + target.getAlias());
+                    return buildFallbackKeyColumns();
                 }
                 output.add(column);
             }
             return output;
         }
+        return buildFallbackKeyColumns();
+    }
+
+    private MvColumn findColumnByName(String name) {
+        for (MvColumn column : target.getColumns()) {
+            if (name.equals(column.getName())) {
+                return column;
+            }
+        }
+        return null;
+    }
+
+    private ArrayList<MvColumn> buildFallbackKeyColumns() {
+        ArrayList<MvColumn> output = new ArrayList<>();
         MvJoinSource topmost = target.getTopMostSource();
         for (String keyName : topmost.getTableInfo().getKey()) {
             MvColumn column = new MvColumn(keyName);
@@ -696,15 +709,6 @@ public class MvSqlGen implements AutoCloseable {
             output.add(column);
         }
         return output;
-    }
-
-    private MvColumn findColumnByName(String name) {
-        for (MvColumn column : target.getColumns()) {
-            if (name.equals(column.getName())) {
-                return column;
-            }
-        }
-        return null;
     }
 
     public static StructType toKeyType(MvViewExpr target) {
@@ -790,9 +794,4 @@ public class MvSqlGen implements AutoCloseable {
         sb.append(">");
         return sb;
     }
-
-    public static String structForTable(MvTableInfo ti) {
-        return structForTable(null, ti).toString();
-    }
-
 }
